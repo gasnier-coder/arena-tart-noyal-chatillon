@@ -1,4 +1,4 @@
-const CACHE_NAME = 'arena-v1';
+const CACHE_NAME = 'arena-v2';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(['./', './index.html', './manifest.json', './logo2.gif'])));
 });
