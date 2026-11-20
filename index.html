@@ -91,14 +91,25 @@
             
             <div class="grid grid-cols-1 gap-2 mb-3">
                 <label class="bg-blue-900/50 hover:bg-blue-800 py-2 rounded-lg font-black text-blue-200 uppercase text-[10px] text-center cursor-pointer border border-blue-500/30 transition">
-                    📂 Importer Fichier (CSV / TXT)
+                    📂 Importer Fichier Joueurs (CSV / TXT)
                     <input type="file" id="fileInput" accept=".csv,.txt" class="hidden" onchange="importFromFile(this)">
                 </label>
             </div>
 
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-2 gap-2 mb-3">
                 <button onclick="autoDistribute()" class="bg-purple-600 hover:bg-purple-500 py-2 rounded-lg font-black text-white uppercase text-[10px]">Dispatcher N/S/E/O</button>
                 <button onclick="saveData(true)" class="bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-black text-white uppercase text-[10px]">💾 Sauvegarder</button>
+            </div>
+
+            <div class="pt-3 border-t border-white/10">
+                <h2 class="text-[10px] font-black text-amber-400 uppercase mb-2 tracking-widest">📦 Fichier de Sauvegarde Complet (JSON)</h2>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="exportSaveJSON()" class="bg-amber-500 hover:bg-amber-400 text-black py-2 rounded-lg font-black uppercase text-[10px] transition">⬇️ Exporter JSON</button>
+                    <label class="bg-amber-900/60 hover:bg-amber-800 py-2 rounded-lg font-black text-amber-200 uppercase text-[10px] text-center cursor-pointer border border-amber-500/30 transition">
+                        ⬆️ Importer JSON
+                        <input type="file" id="jsonFileInput" accept=".json,application/json" class="hidden" onchange="importSaveJSON(this)">
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -134,23 +145,77 @@
             if(alertUser) alert("Données sauvegardées !");
         }
 
-        // --- NOUVELLE FONCTION IMPORT DE FICHIER ---
+        // --- EXPORT / IMPORT FICHIER DE SAUVEGARDE JSON ---
+        function exportSaveJSON() {
+            const payload = {
+                app: "ARENA_TAROT_NOYAL_CHATILLON",
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                totalParties: totalParties,
+                rawPlayers: rawPlayers,
+                scoresData: scoresData
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `sauvegarde-tarot-noyal-chatillon-${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function importSaveJSON(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!Array.isArray(data.rawPlayers) || typeof data.scoresData !== "object" || data.scoresData === null) {
+                        alert("Fichier de sauvegarde JSON invalide.");
+                        input.value = "";
+                        return;
+                    }
+                    rawPlayers = data.rawPlayers;
+                    scoresData = data.scoresData;
+                    totalParties = parseInt(data.totalParties) || 4;
+                    currentIdx = 0;
+                    document.getElementById("nbPartiesSelect").value = totalParties;
+                    saveData(false);
+                    renderInscriptions();
+                    if (!document.getElementById("sec-parties").classList.contains("hidden")) {
+                        renderPartie(currentIdx);
+                    }
+                    if (!document.getElementById("sec-classement").classList.contains("hidden")) {
+                        renderClassement();
+                    }
+                    alert("Sauvegarde importée avec succès !");
+                } catch (err) {
+                    alert("Impossible de lire le fichier JSON : " + err.message);
+                }
+                input.value = "";
+            };
+            reader.readAsText(file);
+        }
+
+        // --- IMPORT DE FICHIER JOUEURS (CSV / TXT) ---
         function importFromFile(input) {
             const file = input.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
                 const content = e.target.result;
-                // On sépare par ligne, on nettoie les virgules/points-virgules si c'est du CSV
                 const lines = content.split(/\r?\n/).filter(l => l.trim() !== "");
                 lines.forEach((line, idx) => {
-                    // Si CSV, on prend la première colonne (le nom)
                     const name = line.split(/[;,]/)[0].trim().toUpperCase();
                     if(name) rawPlayers.push({ nom: name, pos: idx % 4 });
                 });
                 saveData();
                 renderInscriptions();
-                input.value = ""; // Reset de l'input
+                input.value = "";
             };
             reader.readAsText(file);
         }
@@ -331,16 +396,18 @@
         function clearAllData() { if(confirm("⚠ RESET COMPLET ?")) { rawPlayers = []; scoresData = {}; localStorage.clear(); renderInscriptions(); showSection('inscriptions'); } }
         function changeNbParties(v) { totalParties = parseInt(v); saveData(); if (currentIdx >= totalParties) currentIdx = 0; if (!document.getElementById('sec-parties').classList.contains('hidden')) renderPartie(currentIdx); }
 
-      // ... tes fonctions précédentes (clearAllData, etc.)
-    document.addEventListener('DOMContentLoaded', renderInscriptions);
-
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./service-worker.js')
-                .then(reg => console.log('SW enregistré avec succès !', reg))
-                .catch(err => console.error('Erreur d’enregistrement du SW :', err));
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('nbPartiesSelect').value = totalParties;
+            renderInscriptions();
         });
-    }
-</script>
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('SW enregistré avec succès !', reg))
+                    .catch(err => console.error('Erreur d’enregistrement du SW :', err));
+            });
+        }
+    </script>
 </body>
 </html>
