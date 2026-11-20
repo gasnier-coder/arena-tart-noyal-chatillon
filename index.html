@@ -89,27 +89,23 @@
             <h2 class="text-[10px] font-black text-blue-400 uppercase mb-2 tracking-widest">📋 Importation Rapide</h2>
             <textarea id="importArea" rows="2" class="w-full p-3 mb-3 text-black font-bold text-xs rounded-xl outline-none" placeholder="Collez une liste ici..."></textarea>
             
-            <div class="grid grid-cols-1 gap-2 mb-3">
+            <div class="grid grid-cols-1 gap-2 mb-4">
                 <label class="bg-blue-900/50 hover:bg-blue-800 py-2 rounded-lg font-black text-blue-200 uppercase text-[10px] text-center cursor-pointer border border-blue-500/30 transition">
                     📂 Importer Fichier Joueurs (CSV / TXT)
                     <input type="file" id="fileInput" accept=".csv,.txt" class="hidden" onchange="importFromFile(this)">
                 </label>
             </div>
 
-            <div class="grid grid-cols-2 gap-2 mb-3">
-                <button onclick="autoDistribute()" class="bg-purple-600 hover:bg-purple-500 py-2 rounded-lg font-black text-white uppercase text-[10px]">Dispatcher N/S/E/O</button>
-                <button onclick="saveData(true)" class="bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-black text-white uppercase text-[10px]">💾 Sauvegarder</button>
-            </div>
-
             <div class="pt-3 border-t border-white/10">
                 <h2 class="text-[10px] font-black text-amber-400 uppercase mb-2 tracking-widest">📦 Fichier de Sauvegarde Complet (JSON)</h2>
                 <div class="grid grid-cols-2 gap-2">
-                    <button onclick="exportSaveJSON()" class="bg-amber-500 hover:bg-amber-400 text-black py-2 rounded-lg font-black uppercase text-[10px] transition">⬇️ Exporter JSON</button>
+                    <button type="button" onclick="exportSaveJSON()" class="bg-amber-500 hover:bg-amber-400 text-black py-2 rounded-lg font-black uppercase text-[10px] transition cursor-pointer">⬇️ Exporter JSON</button>
                     <label class="bg-amber-900/60 hover:bg-amber-800 py-2 rounded-lg font-black text-amber-200 uppercase text-[10px] text-center cursor-pointer border border-amber-500/30 transition">
                         ⬆️ Importer JSON
-                        <input type="file" id="jsonFileInput" accept=".json,application/json" class="hidden" onchange="importSaveJSON(this)">
+                        <input type="file" id="jsonFileInput" accept=".json,application/json,*/*" class="hidden" onchange="importSaveJSON(this)">
                     </label>
                 </div>
+                <div id="jsonStatus" class="text-[10px] font-bold text-amber-300 mt-2 min-h-[14px]"></div>
             </div>
         </div>
 
@@ -133,10 +129,28 @@
     </section>
 
     <script>
-        let rawPlayers = JSON.parse(localStorage.getItem('tarot_raw_players')) || []; 
-        let scoresData = JSON.parse(localStorage.getItem('tarot_scores_v3')) || {}; 
+        function safeParse(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : fallback;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        let rawPlayers = safeParse('tarot_raw_players', []);
+        let scoresData = safeParse('tarot_scores_v3', {});
         let totalParties = parseInt(localStorage.getItem('tarot_nb_parties')) || 4;
         let currentIdx = 0;
+
+        function setJsonStatus(msg, isError = false) {
+            const el = document.getElementById("jsonStatus");
+            if (!el) return;
+            el.textContent = msg;
+            el.className = isError
+                ? "text-[10px] font-bold text-red-400 mt-2 min-h-[14px]"
+                : "text-[10px] font-bold text-emerald-300 mt-2 min-h-[14px]";
+        }
 
         function saveData(alertUser = false) {
             localStorage.setItem('tarot_raw_players', JSON.stringify(rawPlayers));
@@ -147,35 +161,48 @@
 
         // --- EXPORT / IMPORT FICHIER DE SAUVEGARDE JSON ---
         function exportSaveJSON() {
-            const payload = {
-                app: "ARENA_TAROT_NOYAL_CHATILLON",
-                version: 1,
-                exportedAt: new Date().toISOString(),
-                totalParties: totalParties,
-                rawPlayers: rawPlayers,
-                scoresData: scoresData
-            };
-            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            const dateStr = new Date().toISOString().slice(0, 10);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `sauvegarde-tarot-noyal-chatillon-${dateStr}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            try {
+                const payload = {
+                    app: "ARENA_TAROT_NOYAL_CHATILLON",
+                    version: 1,
+                    exportedAt: new Date().toISOString(),
+                    totalParties: totalParties,
+                    rawPlayers: rawPlayers,
+                    scoresData: scoresData
+                };
+                const jsonText = JSON.stringify(payload, null, 2);
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const fileName = `sauvegarde-tarot-noyal-chatillon-${dateStr}.json`;
+
+                const blob = new Blob([jsonText], { type: "application/octet-stream" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = fileName;
+                a.style.display = "none";
+                document.body.appendChild(a);
+                a.click();
+
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 1000);
+
+                setJsonStatus(`Export lancé : ${fileName} (${rawPlayers.length} joueur(s))`);
+            } catch (err) {
+                setJsonStatus("Erreur export JSON : " + err.message, true);
+            }
         }
 
         function importSaveJSON(input) {
-            const file = input.files[0];
+            const file = input.files && input.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const data = JSON.parse(e.target.result);
                     if (!Array.isArray(data.rawPlayers) || typeof data.scoresData !== "object" || data.scoresData === null) {
-                        alert("Fichier de sauvegarde JSON invalide.");
+                        setJsonStatus("Fichier JSON invalide (structure incorrecte).", true);
                         input.value = "";
                         return;
                     }
@@ -192,10 +219,14 @@
                     if (!document.getElementById("sec-classement").classList.contains("hidden")) {
                         renderClassement();
                     }
-                    alert("Sauvegarde importée avec succès !");
+                    setJsonStatus(`Import réussi : ${file.name} (${rawPlayers.length} joueur(s))`);
                 } catch (err) {
-                    alert("Impossible de lire le fichier JSON : " + err.message);
+                    setJsonStatus("Lecture JSON impossible : " + err.message, true);
                 }
+                input.value = "";
+            };
+            reader.onerror = function() {
+                setJsonStatus("Erreur de lecture du fichier.", true);
                 input.value = "";
             };
             reader.readAsText(file);
@@ -384,13 +415,6 @@
             document.getElementById('btn-' + id).classList.add('active');
             if (id === 'parties') renderPartie(currentIdx);
             if (id === 'classement') renderClassement();
-        }
-
-        function autoDistribute() {
-            document.getElementById('importArea').value.split('\n').filter(l => l.trim() !== "").forEach((line, idx) => {
-                rawPlayers.push({ nom: line.trim().toUpperCase(), pos: idx % 4 });
-            });
-            document.getElementById('importArea').value = ""; saveData(); renderInscriptions();
         }
 
         function clearAllData() { if(confirm("⚠ RESET COMPLET ?")) { rawPlayers = []; scoresData = {}; localStorage.clear(); renderInscriptions(); showSection('inscriptions'); } }
